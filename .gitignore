@@ -1,0 +1,111 @@
+# =====================================================================
+#  .gitignore för STM32CubeIDE-projekt
+#  Enchipsdatorer (TEDK18 / TMIK13)
+#
+#  Lägg denna fil i roten av ditt kursrepo, bredvid dina projektmappar.
+#  Filen ska heta exakt ".gitignore" -- utan filändelse.
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+#  CubeIDE:s workspace
+#
+#  .metadata är Eclipse/CubeIDE:s arbetsyta: loggar, fönsterplaceringar
+#  och absoluta sökvägar till just din dator. Den är stor, ändras vid
+#  varje programstart och är helt oanvändbar för någon annan.
+#  Lägger du workspace i samma mapp som ditt repo -- vilket labben ber
+#  dig göra -- hamnar den annars i versionshanteringen.
+# ---------------------------------------------------------------------
+.metadata/
+RemoteSystemsTempFiles/
+.recommenders/
+*.launch
+.settings/
+
+
+# ---------------------------------------------------------------------
+#  Byggkataloger
+#
+#  Allt här kan återskapas genom att bygga om. Observera att det gamla
+#  mönstret "*/Debug/" bara träffade en nivå ner; "Debug/" träffar
+#  överallt.
+# ---------------------------------------------------------------------
+Debug/
+Release/
+build/
+cmake-build-*/
+
+
+# ---------------------------------------------------------------------
+#  CMake (CubeIDE 2.0+ bygger med CMake)
+# ---------------------------------------------------------------------
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+
+# ---------------------------------------------------------------------
+#  Kompilerings- och länkresultat
+# ---------------------------------------------------------------------
+*.o
+*.obj
+*.d
+*.su
+*.cyclo
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.lss
+*.gch
+*.pch
+
+
+# ---------------------------------------------------------------------
+#  Bibliotek och värdprogram
+#  (Kommer sällan upp i kursen, men skadar inte.)
+# ---------------------------------------------------------------------
+*.a
+*.la
+*.lo
+*.lib
+*.dll
+*.so
+*.so.*
+*.dylib
+*.exe
+*.app
+*.dSYM/
+
+
+# ---------------------------------------------------------------------
+#  Skräp från operativsystemet
+# ---------------------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+*~
+*.bak
+
+
+# =====================================================================
+#  VIKTIGT: detta ska INTE ignoreras
+#
+#  Följande filer måste ligga i repot, annars går projektet inte att
+#  återskapa på en annan dator. Lägg aldrig till dem här.
+#
+#    *.ioc          CubeMX-konfigurationen. Hela hårdvaruuppsättningen
+#                   ligger här -- det är den viktigaste filen i projektet.
+#    .project       CubeIDE:s projektdefinition.
+#    .cproject      CubeIDE:s bygginställningar.
+#    .mxproject     CubeMX:s register över vad den genererat.
+#    *.ld           Länkskript (t.ex. STM32L433RCTX_FLASH.ld).
+#    Core/          Din kod och den genererade koden.
+#    Drivers/       HAL-biblioteket.
+#    CMakeLists.txt Byggbeskrivning i CubeIDE 2.0+.
+#
+#  Kontrollera i GitHub Desktop att din .ioc-fil syns bland ändringarna
+#  första gången du committar. Gör den inte det, säg till en handledare.
+# =====================================================================
