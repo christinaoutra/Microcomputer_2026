@@ -27,13 +27,16 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+// Händelserna som programet kan reagera på
 enum event
 {
-    ev_none,
-    ev_button_push,
-    ev_state_timeout,
-    ev_error = -99
+    ev_none,           //inget händer
+    ev_button_push,    // knappen trycks
+    ev_state_timeout,  // Tiden för nuvarande state har gått ut
+    ev_error = -99     // Ogiltig event
 };
+
+// Olika tillstång trafikljuset kan befinna sig i
 enum state
 {
     s_init,
@@ -64,15 +67,17 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+// Skapar event-kön som kan lagra upp till 10 events
 #define EVQ_SIZE 10
 
 enum event evq[EVQ_SIZE];
-int evq_count = 0;
-int evq_front_ix = 0;
-int evq_rear_ix = 0;
+int evq_count = 0;     // hur många som ligger i kön
+int evq_front_ix = 0;  // var nästa ska hämtas
+int evq_rear_ix = 0;   //var nästa ska läggas
 
 uint32_t ticks_left_in_state = 0;
 /* USER CODE END PV */
+
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -106,6 +111,7 @@ void evq_push_back(enum event e)
     }
 }
 
+// Hämtar och tar bort det äldsta eventet från kön
 enum event evq_pop_front(void)
 {
     enum event e = ev_none;
@@ -140,9 +146,9 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-	    // Startar programmet i init-state utan något event
-		enum state st = s_init;
-		enum event ev = ev_none;
+	// Startar programmet i init-state utan något event
+	enum state st = s_init;
+	enum event ev = ev_none;
 
 
   /* USER CODE END 1 */
@@ -185,7 +191,8 @@ int main(void)
 	    ev = evq_pop_front();
 
 
-
+        //Bestämmer vad i programmet som ska hända
+	    // Logiken och state byte
 	    // Hanterar vilket state programmet är i
 	    switch (st)
 	    {
@@ -531,7 +538,7 @@ void push_indicator_off(void)
     HAL_GPIO_WritePin(PUSH_INDICATOR_GPIO_Port, PUSH_INDICATOR_Pin, GPIO_PIN_RESET);
 }
 
-
+// styr lamporna beroende på state de bytts till
 //funktion som styr ljusen
 //state bestämmer vilka lampor som ska lysa
 //gpio pin set tänder lampan, reset släcker lampan
