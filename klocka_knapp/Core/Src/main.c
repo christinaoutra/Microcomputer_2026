@@ -44,6 +44,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -60,12 +62,24 @@ uint32_t last_flank_causing_exti;
 // Stores the last interrupt that has already been handled.
 uint32_t last_managed_exti;
 
+// Clock time.
+volatile uint8_t clock_hours = 0;
+volatile uint8_t clock_minutes = 0;
+volatile uint8_t clock_seconds = 0;
+
+// Counts the half-second timer events.
+volatile uint8_t clock_half_second = 0;
+
+// Controls if the colon is on or off.
+volatile uint8_t clock_colon = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 // Print the UART menu.
@@ -120,6 +134,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 //test till display
 /*
@@ -217,6 +232,44 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 3999;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 9999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
 }
 
 /**
@@ -378,6 +431,47 @@ int uart_get_menu_choice()
     return ret;
 }
 
+// Runs every time a timer interrupt happens.
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    // Check that the interrupt came from TIM6.
+    if (htim->Instance == TIM6)
+    {
+    	// Toggle colon every 0.5 seconds.
+    	clock_colon = !clock_colon;
+
+    	// Count half-second events.
+    	clock_half_second++;
+
+    	// Two half-second events make one second.
+    	if (clock_half_second >= 2)
+    	{
+    	    clock_half_second = 0;
+    	    clock_seconds++;
+
+    	    // 60 seconds make one minute.
+    	    if (clock_seconds >= 60)
+    	    {
+    	        clock_seconds = 0;
+    	        clock_minutes++;
+
+    	        // 60 minutes make one hour.
+    	        if (clock_minutes >= 60)
+    	        {
+    	            clock_minutes = 0;
+    	            clock_hours++;
+
+    	            // Start a new day after 24 hours.
+    	            if (clock_hours >= 24)
+    	            {
+    	                clock_hours = 0;
+    	            }
+    	        }
+    	    }
+    	}
+    }
+}
+
 void uart_print_bad_choice()
 {
     // Tell the user that the menu choice was invalid.
@@ -386,11 +480,45 @@ void uart_print_bad_choice()
 
 void clock_mode()
 {
-    // Clock code will be added here later.
+	// Show that clock mode has started.
+	printf("\r\nClock mode started\r\n");
+
+/*	clock_hours = 23;
+	clock_minutes = 59;
+	clock_seconds = 45;
+*/
+
+	// Start TIM6 with interrupt.
+	HAL_TIM_Base_Start_IT(&htim6);
 
     while (1)
     {
-        // Clock main loop.
+
+    	int b1_pressed = GPIO_PIN_SET
+    	        == HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
+
+    	if (b1_pressed)
+    	{
+    	    // Show HH:MM when B1 is pressed.
+    	    qs_put_digits(
+    	        clock_hours / 10,
+    	        clock_hours % 10,
+    	        clock_minutes / 10,
+    	        clock_minutes % 10,
+    	        clock_colon
+    	    );
+    	}
+    	else
+    	{
+    		// Show MM:SS on the display.
+    		qs_put_digits(
+    			clock_minutes / 10,
+				clock_minutes % 10,
+				clock_seconds / 10,
+				clock_seconds % 10,
+				clock_colon
+    		);
+    	}
     }
 }
 
