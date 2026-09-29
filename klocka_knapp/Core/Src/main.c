@@ -33,6 +33,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+// Debounce time measured with the oscilloscope.
+#define BOUNCE_DELAY_MS 4
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,6 +47,18 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+
+// Counts all button interrupts, including bouncing.
+uint16_t button_exti_count;
+
+// Counts valid button presses after debouncing.
+uint16_t button_debounced_count;
+
+// Stores the time of the latest button interrupt.
+uint32_t last_flank_causing_exti;
+
+// Stores the last interrupt that has already been handled.
+uint32_t last_managed_exti;
 
 /* USER CODE END PV */
 
@@ -325,6 +340,20 @@ int _write(int file, char *ptr, int len) {
 	return len;
 }
 
+// Runs when a GPIO interrupt happens.
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    // Check that the interrupt came from our external button.
+    if (GPIO_Pin == MY_BTN_Pin)
+    {
+        // Count every interrupt, including contact bounce.
+        button_exti_count++;
+
+        // Save the time when the latest interrupt happened.
+        last_flank_causing_exti = HAL_GetTick();
+    }
+}
+
 void uart_print_menu ()
 {
 	printf("\r\nMenu:\r\n");
@@ -367,14 +396,50 @@ void clock_mode()
 
 void button_mode()
 {
-    // Button code will be added here later.
+    // Store current time.
+    uint32_t now;
+
+    // Show that button mode has started.
+    printf("\r\nButton mode started\r\n");
 
     while (1)
     {
-        // Button main loop.
+        // Read current system time in milliseconds.
+        now = HAL_GetTick();
+
+        // Store if the blue B1 button is pressed.
+        int b1_pressed;
+
+        // Check if a new interrupt has happened.
+        if (last_flank_causing_exti != last_managed_exti)
+        {
+            // Check if enough time has passed since the latest flank.
+            if ((now - last_flank_causing_exti) >= BOUNCE_DELAY_MS)
+            {
+                // Mark this interrupt as handled.
+                last_managed_exti = last_flank_causing_exti;
+
+				// Check if the button is still pressed.
+				if (HAL_GPIO_ReadPin(MY_BTN_GPIO_Port, MY_BTN_Pin)
+						== GPIO_PIN_RESET) {
+					// Count one valid button press.
+					button_debounced_count++;
+
+				}
+			}
+        }
+
+		// Check the blue B1 button on the NUCLEO board.
+		b1_pressed = GPIO_PIN_RESET
+				== HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
+
+		// Show raw interrupts when B1 is held.
+		// Otherwise show debounced button presses.
+		qs_put_big_num(
+				b1_pressed ?
+						button_exti_count : button_debounced_count);
     }
 }
-
 
 /* USER CODE END 4 */
 
