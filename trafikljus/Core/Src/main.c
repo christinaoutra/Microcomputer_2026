@@ -33,7 +33,7 @@ enum event
     ev_none,           //inget händer
     ev_button_push,    // knappen trycks
     ev_state_timeout,  // Tiden för nuvarande state har gått ut
-    ev_error = -99     // Ogiltig event
+    //ev_error = -99     // Ogiltig event
 };
 
 // Olika tillstång trafikljuset kan befinna sig i
@@ -67,7 +67,7 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-// Skapar event-kön som kan lagra upp till 10 events
+/*// Skapar event-kön som kan lagra upp till 10 events
 #define EVQ_SIZE 10
 
 enum event evq[EVQ_SIZE];
@@ -76,8 +76,8 @@ int evq_front_ix = 0;  // var nästa ska hämtas
 int evq_rear_ix = 0;   //var nästa ska läggas
 
 uint32_t ticks_left_in_state = 0;
+*/
 /* USER CODE END PV */
-
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -92,7 +92,7 @@ void push_indicator_off(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void evq_init(void)
+/*void evq_init(void)
 {
     for (int i = 0; i < EVQ_SIZE; i++)
     {
@@ -127,11 +127,11 @@ enum event evq_pop_front(void)
 
     return e;
 }
-
+*/
 // Läser om knappen är tryckt
 int is_button_pressed(void)
 {
-    return HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET;
+    return HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET;
 }
 
 
@@ -150,6 +150,12 @@ int main(void)
 	enum state st = s_init;
 	enum event ev = ev_none;
 
+	int curr_press = 0;
+	int last_press = 0;
+
+	uint32_t ticks_left_in_state = 0;
+	uint32_t curr_tick = 0;
+	uint32_t last_tick = 0;
 
   /* USER CODE END 1 */
 
@@ -178,7 +184,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   abuzz_stop();
 
-  evq_init();
+  //evq_init();
   set_traffic_lights(s_init);
 
   /* USER CODE END 2 */
@@ -188,7 +194,37 @@ int main(void)
   while (1)
   {
 	    // Nollställer event i början av varje loop
-	    ev = evq_pop_front();
+	    //ev = evq_pop_front();
+	  ev = ev_none;
+
+	  // Läs av knappen
+	  curr_press = is_button_pressed();
+
+	  // Skapa event när knappen precis har tryckts
+	  if (curr_press && !last_press)
+	  {
+	      ev = ev_button_push;
+	  }
+
+	  last_press = curr_press;
+
+	  // Kontrollera tiden
+	  curr_tick = HAL_GetTick();
+
+	  if (curr_tick != last_tick)
+	  {
+	      last_tick = curr_tick;
+
+	      if (ticks_left_in_state > 0)
+	      {
+	          ticks_left_in_state--;
+
+	          if (ticks_left_in_state == 0)
+	          {
+	              ev = ev_state_timeout;
+	          }
+	      }
+	  }
 
 
         //Bestämmer vad i programmet som ska hända
@@ -479,11 +515,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD4_Pin|PUSH_INDICATOR_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SMPS_EN_Pin PA5 PA6 SMPS_SW_Pin
                            CAR_RED_Pin CAR_YELLOW_Pin CAR_GREEN_Pin PAD_RED_Pin
@@ -503,17 +539,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-
+/*
 void my_systick_handler(void)
 {
     if (ticks_left_in_state > 0)
@@ -526,7 +558,7 @@ void my_systick_handler(void)
         }
     }
 }
-
+*/
 
 void push_indicator_on(void)
 {
@@ -622,7 +654,7 @@ void set_traffic_lights(enum state s)
             break;
     }
 }
-
+/*
 // Körs när B1-knappen skapar ett interrupt
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -631,7 +663,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     	evq_push_back(ev_button_push);
     }
 }
-
+*/
 /* USER CODE END 4 */
 
 /**
