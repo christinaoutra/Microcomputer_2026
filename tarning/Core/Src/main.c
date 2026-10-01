@@ -78,7 +78,7 @@ int is_button_pressed(void)
     uint32_t reg_reading = GPIOC->IDR;
 
     // Läser bara PC13
-    return (reg_reading & GPIO_PIN_13) == 0;
+    return (reg_reading & GPIO_PIN_13) != 0;
 }
 
 // Visar rätt prickar för tärningsvärdet
@@ -176,7 +176,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	uint8_t die_value = 0;
+	uint8_t die_value = 1;
 
   /* USER CODE END 1 */
 
@@ -201,6 +201,10 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  // Visar tärningens startvärde
+  put_die_dots(die_value);
+  put_on_sseg(die_value);
+
   /*
   // Testar siffrorna 0 till 9 på 7-segmentdisplayen
   for (uint8_t i = 0; i <= 9; i++)
@@ -221,6 +225,9 @@ int main(void)
 	    if (is_button_pressed())
 	    {
 	        // Rulla tärningen
+
+	    	HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_SET);
+
 	        die_value++;
 
 	        if (die_value > 6)
@@ -231,9 +238,15 @@ int main(void)
 	        put_die_dots(die_value);
 	        put_on_sseg(die_value);
 
-	        // Lite paus så att tärningen inte går för snabbt
-	        HAL_Delay(500);
-	    }
+
+	        HAL_Delay(1);
+		}
+	    else
+	    {
+			// Släck LD4 när knappen inte är nedtryckt
+			HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_RESET);
+		}
+
 
     /* USER CODE END WHILE */
 
