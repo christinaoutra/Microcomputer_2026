@@ -44,6 +44,21 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+const uint16_t sseg[10] = {
+    0x05F, // 0
+    0x006, // 1
+    0x09B, // 2
+    0x08F, // 3
+    0x0C6, // 4
+    0x0CD, // 5
+    0x0DD, // 6
+    0x007, // 7
+    0x0DF, // 8
+    0x0CF  // 9
+};
+
+const uint16_t sseg_err = 0x1AC;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -132,6 +147,25 @@ void put_die_dots(uint8_t die_nbr)
     }
 }
 
+// Visar en siffra på 7-segmentdisplayen
+void put_on_sseg(uint8_t dec_nbr)
+{
+    uint16_t value;
+
+    if (dec_nbr <= 9)
+    {
+        value = sseg[dec_nbr];
+    }
+    else
+    {
+        value = sseg_err;
+    }
+
+    GPIOC->ODR = (GPIOC->ODR & ~0x1DF) | value;
+}
+
+
+
 /* USER CODE END 0 */
 
 /**
@@ -166,6 +200,15 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  // Testar siffrorna 0 till 9 på 7-segmentdisplayen
+  for (uint8_t i = 0; i <= 9; i++)
+  {
+      put_on_sseg(i);
+      HAL_Delay(1500);
+  }
+
+  put_on_sseg(88); // Visar felmönstret
 
   /* USER CODE END 2 */
 
@@ -299,6 +342,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, SSEG_A_Pin|SSEG_B_Pin|SSEG_C_Pin|SSEG_D_Pin
+                          |SSEG_E_Pin|SSEG_F_Pin|SSEG_G_Pin|SSEG_DP_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, SMPS_EN_Pin|SMPS_V1_Pin|SMPS_SW_Pin|DI_A_Pin
                           |DI_B_Pin|DI_C_Pin|DI_D_Pin|DI_E_Pin, GPIO_PIN_RESET);
 
@@ -310,6 +357,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SSEG_A_Pin SSEG_B_Pin SSEG_C_Pin SSEG_D_Pin
+                           SSEG_E_Pin SSEG_F_Pin SSEG_G_Pin SSEG_DP_Pin */
+  GPIO_InitStruct.Pin = SSEG_A_Pin|SSEG_B_Pin|SSEG_C_Pin|SSEG_D_Pin
+                          |SSEG_E_Pin|SSEG_F_Pin|SSEG_G_Pin|SSEG_DP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SMPS_EN_Pin SMPS_V1_Pin SMPS_SW_Pin DI_A_Pin
                            DI_B_Pin DI_C_Pin DI_D_Pin DI_E_Pin */
