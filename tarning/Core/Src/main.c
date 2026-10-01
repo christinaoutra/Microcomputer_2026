@@ -201,14 +201,16 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  /*
   // Testar siffrorna 0 till 9 på 7-segmentdisplayen
   for (uint8_t i = 0; i <= 9; i++)
   {
       put_on_sseg(i);
-      HAL_Delay(1500);
+      HAL_Delay(1000);
   }
 
   put_on_sseg(88); // Visar felmönstret
+*/
 
   /* USER CODE END 2 */
 
@@ -227,9 +229,10 @@ int main(void)
 	        }
 
 	        put_die_dots(die_value);
+	        put_on_sseg(die_value);
 
 	        // Lite paus så att tärningen inte går för snabbt
-	        HAL_Delay(1500);
+	        HAL_Delay(500);
 	    }
 
     /* USER CODE END WHILE */
