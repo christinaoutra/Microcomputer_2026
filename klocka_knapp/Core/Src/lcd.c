@@ -11,7 +11,24 @@
  */
 void My_Delay(uint32_t mysec)
 {
-	HAL_Delay( 1 + (mysec / 1000) );
+	//HAL_Delay( 1 + (mysec / 1000) );
+    // Stoppar TIM2 innan räknaren ändras
+    TIM2->CR1 &= ~(1 << 0);
+
+    // Nollställer räknaren
+    TIM2->CNT = 0;
+
+    // Startar TIM2
+    TIM2->CR1 |= (1 << 0);
+
+    // Väntar tills önskat antal mikrosekunder har gått
+    while (TIM2->CNT < mysec)
+    {
+        // Väntar
+    }
+
+    // Stoppar TIM2 igen
+    TIM2->CR1 &= ~(1 << 0);
 }
 
 #define BIT_BT   0x08
@@ -87,6 +104,8 @@ void TextLCD_Init(
 		I2C_HandleTypeDef   *   hi2c,
 		uint8_t                 device_address)
 {
+
+
 	hlcd->hi2c           = hi2c;
 	hlcd->device_address = device_address;
 

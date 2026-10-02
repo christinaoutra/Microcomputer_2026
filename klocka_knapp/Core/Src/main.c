@@ -24,10 +24,19 @@
 #include "quad_sseg.h"
 #include "lcd.h"
 #include <stdio.h> //Needed for printf() and scanf()
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+// Stores the clock time
+struct clock_data
+{
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+};
 
 /* USER CODE END PTD */
 
@@ -47,11 +56,18 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+
+// Tells the main loop that the clock should tick
+volatile uint8_t clock_tick_pending = 0;
+
+// Clock data
+struct clock_data my_clock;
 
 // LCD-skärmen
 TextLCDType lcd;
@@ -68,13 +84,15 @@ uint32_t last_flank_causing_exti;
 // Stores the last interrupt that has already been handled.
 uint32_t last_managed_exti;
 
+/*
 // Clock time.
 volatile uint8_t clock_hours = 0;
 volatile uint8_t clock_minutes = 0;
 volatile uint8_t clock_seconds = 0;
+*/
 
 // Counts the half-second timer events.
-volatile uint8_t clock_half_second = 0;
+//volatile uint8_t clock_half_second = 0;
 
 // Controls if the colon is on or off.
 volatile uint8_t clock_colon = 0;
@@ -87,6 +105,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 // Print the UART menu.
@@ -143,6 +162,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM6_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   // Testar om LCD-skärmen svarar via I2C
@@ -300,6 +320,51 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 79;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM6 Initialization Function
   * @param None
   * @retval None
@@ -319,7 +384,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 3999;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 9999;
+  htim6.Init.Period = 19999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -450,6 +515,50 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void cd_set(struct clock_data *pcd, uint8_t hrs, uint8_t min, uint8_t sec)
+{
+    // Sets the clock time
+    pcd->hours = hrs;
+    pcd->minutes = min;
+    pcd->seconds = sec;
+}
+
+void cd_tick(struct clock_data *pcd)
+{
+    // Updates the clock by one second
+    pcd->seconds++;
+
+    if (pcd->seconds >= 60)
+    {
+        pcd->seconds = 0;
+        pcd->minutes++;
+
+        if (pcd->minutes >= 60)
+        {
+            pcd->minutes = 0;
+            pcd->hours++;
+
+            if (pcd->hours >= 24)
+            {
+                pcd->hours = 0;
+            }
+        }
+    }
+}
+
+void uart_print_cd(UART_HandleTypeDef *huart, struct clock_data *pcd)
+{
+    // Prints the clock on the same row in PuTTY
+    char str[20];
+
+    sprintf(str, "\r%02d:%02d:%02d",
+            pcd->hours,
+            pcd->minutes,
+            pcd->seconds);
+
+    HAL_UART_Transmit(huart, (uint8_t *)str, strlen(str), HAL_MAX_DELAY);
+}
+
 // Send printf() text through UART2.
 int _write(int file, char *ptr, int len) {
 	HAL_UART_Transmit(&huart2, (uint8_t*) ptr, len,
@@ -497,43 +606,39 @@ int uart_get_menu_choice()
 }
 
 // Runs every time a timer interrupt happens.
+/*void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    // Check that the interrupt came from TIM6.
+    if (htim->Instance == TIM6)
+    {
+        // Toggle colon every 0.5 seconds.
+        clock_colon = !clock_colon;
+
+        // Count half-second events.
+        clock_half_second++;
+
+        if (clock_half_second >= 2)
+        {
+            clock_half_second = 0;
+
+            // Tell the main loop to update the clock.
+            clock_tick_pending = 1;
+        }
+    }
+}
+*/
+
+// Runs every time a timer interrupt happens.
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     // Check that the interrupt came from TIM6.
     if (htim->Instance == TIM6)
     {
-    	// Toggle colon every 0.5 seconds.
-    	clock_colon = !clock_colon;
+        // Toggle colon every second.
+        clock_colon = !clock_colon;
 
-    	// Count half-second events.
-    	clock_half_second++;
-
-    	// Two half-second events make one second.
-    	if (clock_half_second >= 2)
-    	{
-    	    clock_half_second = 0;
-    	    clock_seconds++;
-
-    	    // 60 seconds make one minute.
-    	    if (clock_seconds >= 60)
-    	    {
-    	        clock_seconds = 0;
-    	        clock_minutes++;
-
-    	        // 60 minutes make one hour.
-    	        if (clock_minutes >= 60)
-    	        {
-    	            clock_minutes = 0;
-    	            clock_hours++;
-
-    	            // Start a new day after 24 hours.
-    	            if (clock_hours >= 24)
-    	            {
-    	                clock_hours = 0;
-    	            }
-    	        }
-    	    }
-    	}
+        // Tell the main loop to update the clock.
+        clock_tick_pending = 1;
     }
 }
 
@@ -548,10 +653,13 @@ void clock_mode()
 	// Show that clock mode has started.
 	printf("\r\nClock mode started\r\n");
 
-	clock_hours = 23;
+	/*clock_hours = 23;
 	clock_minutes = 59;
 	clock_seconds = 45;
+	*/
 
+	// Sets the start time
+	cd_set(&my_clock, 23, 59, 45);
 
 	// Start TIM6 with interrupt.
 	HAL_TIM_Base_Start_IT(&htim6);
@@ -561,11 +669,25 @@ void clock_mode()
     while (1)
     {
 
-    	// Visar tiden på LCD-skärmen
+    	// Update the clock when one second has passed
+    	if (clock_tick_pending)
+    	{
+    	    clock_tick_pending = 0;
+    	    cd_tick(&my_clock);
+    	    uart_print_cd(&huart2, &my_clock);
+    	}
+
+		/*// Visar tiden på LCD-skärmen
+		 sprintf(lcd_time, "%02d:%02d:%02d",
+		 clock_hours,
+		 clock_minutes,
+		 clock_seconds);
+		 */
+
     	sprintf(lcd_time, "%02d:%02d:%02d",
-    	        clock_hours,
-    	        clock_minutes,
-    	        clock_seconds);
+    	        my_clock.hours,
+    	        my_clock.minutes,
+    	        my_clock.seconds);
 
     	TextLCD_Position(&lcd, 8, 1);
     	TextLCD_PutStr(&lcd, lcd_time);
@@ -575,24 +697,38 @@ void clock_mode()
 
     	if (b1_pressed)
     	{
-    	    // Show HH:MM when B1 is pressed.
+    	    /*// Show HH:MM when B1 is pressed.
     	    qs_put_digits(
     	        clock_hours / 10,
     	        clock_hours % 10,
     	        clock_minutes / 10,
     	        clock_minutes % 10,
-    	        clock_colon
+    	        clock_colon */
+    		qs_put_digits(
+    		    my_clock.hours / 10,
+    		    my_clock.hours % 10,
+    		    my_clock.minutes / 10,
+    		    my_clock.minutes % 10,
+    		    clock_colon
     	    );
     	}
     	else
     	{
-    		// Show MM:SS on the display.
+    		/*// Show MM:SS on the display.
     		qs_put_digits(
     			clock_minutes / 10,
 				clock_minutes % 10,
 				clock_seconds / 10,
 				clock_seconds % 10,
 				clock_colon
+    		);*/
+
+    		qs_put_digits(
+    		    my_clock.minutes / 10,
+    		    my_clock.minutes % 10,
+    		    my_clock.seconds / 10,
+    		    my_clock.seconds % 10,
+    		    clock_colon
     		);
     	}
     }
