@@ -54,7 +54,7 @@ TIM_HandleTypeDef htim2;
 TextLCDType lcd;
 char lcd_text[17];
 
-#define ADC_BUF_SIZE 2
+#define ADC_BUF_SIZE 3
 
 volatile uint16_t adc_buffer[ADC_BUF_SIZE];
 volatile int adc_buf_ix = 0;
@@ -150,21 +150,22 @@ int main(void)
 	  {
 	      adc_ready = 0;
 
-	      // Read X and Y from buffer
 	      uint16_t x_value = adc_buffer[0];
 	      uint16_t y_value = adc_buffer[1];
+	      uint16_t light_value = adc_buffer[2];
+	      // Normalize and invert light reading
+	      float light = 1.0f - normalize_12bit(light_value);
 
-	      // Normalize both values
 	      float x = normalize_12bit_posneg(x_value);
 	      float y = normalize_12bit_posneg(y_value);
 
-	      // Show X on first LCD row
-	      snprintf(lcd_text, sizeof(lcd_text), "X: %+.2f        ", x);
+	      // Show joystick X and Y
+	      snprintf(lcd_text, sizeof(lcd_text), "X:%+.2f Y:%+.2f", x, y);
 	      TextLCD_Position(&lcd, 0, 0);
 	      TextLCD_PutStr(&lcd, lcd_text);
 
-	      // Show Y on second LCD row
-	      snprintf(lcd_text, sizeof(lcd_text), "Y: %+.2f        ", y);
+	      // Show light sensor
+	      snprintf(lcd_text, sizeof(lcd_text), "Light: %.3f     ", light);
 	      TextLCD_Position(&lcd, 0, 1);
 	      TextLCD_PutStr(&lcd, lcd_text);
 	  }
@@ -257,7 +258,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
-  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.NbrOfConversion = 3;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
@@ -286,6 +287,15 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = ADC_REGULAR_RANK_3;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -363,7 +373,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 79;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
