@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
+  ****************************************************************************
   * @file           : main.c
   * @brief          : Main program body
-  ******************************************************************************
+  ****************************************************************************
   * @attention
   *
   * Copyright (c) 2026 STMicroelectronics.
@@ -13,7 +13,7 @@
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
-  ******************************************************************************
+  ****************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
@@ -21,8 +21,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "quad_sseg.h"
-#include <stdio.h> //Needed for printf() and scanf()
+#include <stdio.h>
+#include <string.h>
+#include "lcd.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,10 +34,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-// Debounce time measured with the oscilloscope.
-#define BOUNCE_DELAY_MS 4
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,63 +42,163 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+//volatile uint8_t button_pressed = 0;
 
-// Counts all button interrupts, including bouncing.
-uint16_t button_exti_count;
+TextLCDType hlcd;
 
-// Counts valid button presses after debouncing.
-uint16_t button_debounced_count;
+struct clock_data
+{
+	uint8_t hours;
+	uint8_t minutes;
+	uint8_t seconds;
+};
 
-// Stores the time of the latest button interrupt.
-uint32_t last_flank_causing_exti;
+struct clock_data my_clock;
 
-// Stores the last interrupt that has already been handled.
-uint32_t last_managed_exti;
-
-// Clock time.
-volatile uint8_t clock_hours = 0;
-volatile uint8_t clock_minutes = 0;
-volatile uint8_t clock_seconds = 0;
-
-// Counts the half-second timer events.
-volatile uint8_t clock_half_second = 0;
-
-// Controls if the colon is on or off.
-volatile uint8_t clock_colon = 0;
-
+volatile uint8_t clock_ticks_pending = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-
-// Print the UART menu.
-void uart_print_menu(void);
-
-// Read one menu choice from UART.
-int uart_get_menu_choice(void);
-
-// Print message for invalid choice.
-void uart_print_bad_choice(void);
-
-// Start clock mode.
-void clock_mode(void);
-
-// Start button mode.
-void button_mode(void);
-
+void lcd_show_time(void);
+void uart_print_cd(UART_HandleTypeDef *huart,
+                   struct clock_data *pcd);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/*
+void wait_for_button_press(void)
+{
+    // Vänta tills knappen trycks ned
+    while (button_pressed == 0)
+    {
+        // Do nothing
+    }
+
+    // Vänta tills knappen släpps
+    while (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET)
+    {
+        // Do nothing
+    }
+
+    // Reset the flag
+    button_pressed = 0;
+}
+*/
+
+void cd_set(struct clock_data *pcd,
+            uint8_t hrs,
+            uint8_t min,
+            uint8_t sec)
+{
+	// Sätt klockans timer, min och sekunder
+    pcd->hours = hrs;
+    pcd->minutes = min;
+    pcd->seconds = sec;
+}
+
+void cd_tick(struct clock_data *pcd)
+{
+	//Öka klockan med en sekund
+    pcd->seconds++;
+
+    // När 60 sekunder nås, nollställs sekunder och öka min.
+    if (pcd->seconds >= 60)
+    {
+        pcd->seconds = 0;
+        pcd->minutes++;
+    }
+
+    // När 60 min nås, nollställ min och öka timmar
+    if (pcd->minutes >= 60)
+    {
+        pcd->minutes = 0;
+        pcd->hours++;
+    }
+
+    // När 24 h nås, börja om från 00
+    if (pcd->hours >= 24)
+    {
+        pcd->hours = 0;
+    }
+}
+
+void uart_print_cd(UART_HandleTypeDef *huart,
+                   struct clock_data *pcd)
+{
+    char buffer[20];
+
+    snprintf(buffer, sizeof(buffer), "\r%02d:%02d:%02d",
+             pcd->hours,
+             pcd->minutes,
+             pcd->seconds);
+
+    HAL_UART_Transmit(huart, (uint8_t *)buffer,
+                      strlen(buffer), HAL_MAX_DELAY);
+}
+
+
+int _write(int file, char *ptr, int len)
+{
+    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+    return len;
+}
+
+
+
+void lcd_show_time(void)
+{
+    char time_str[12];
+
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d",
+             my_clock.hours,
+             my_clock.minutes,
+             my_clock.seconds);
+
+    // Placera tiden högerjusterad på LCD:ns andra rad
+    TextLCD_Position(&hlcd, 8, 1);
+    TextLCD_PutStr(&hlcd, time_str);
+}
+
+/*
+void clock_mode(void)
+{
+    cd_set(&my_clock, 0, 0, 0);
+
+    HAL_TIM_Base_Start_IT(&htim6);
+
+    while (1)
+    {
+        if (clock_ticks_pending > 0)
+        {
+            __disable_irq();
+            clock_ticks_pending--;
+            __enable_irq();
+
+            cd_tick(&my_clock);
+            uart_print_cd(&huart2, &my_clock);
+            lcd_show_time();
+        }
+    }
+}
+*/
+
 
 /* USER CODE END 0 */
 
@@ -112,7 +210,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -121,68 +218,86 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
+  MX_I2C1_Init();
   MX_TIM6_Init();
+  MX_USART2_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-//test till display
-/*
-  for (int i = 0; i < 10; i++)
-  {
-      uint32_t dly = 250;
 
-      qs_put_big_num(i);
-      HAL_Delay(dly);
+  TextLCD_Init(&hlcd, &hi2c1, 0x4E);
 
-      qs_put_digits(i, i, i, i, 0);
-      HAL_Delay(dly);
+  // Sätt starttiden
+  //cd_set(&my_clock, 0, 0, 0);
+  cd_set(&my_clock, 23,59,50);
 
-      qs_put_digits(i, i, i, i, 1);
-      HAL_Delay(dly);
-  }
-*/
+  // Visa starttiden på LCD:n
+  lcd_show_time();
+
+  // Starta TIM6 med interrupt för 1 sekundstick
+  HAL_TIM_Base_Start_IT(&htim6);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
-		// Print the menu.
-		uart_print_menu();
-
-		// Read the user's choice.
-		int menu_choice = uart_get_menu_choice();
-
-		// Choose what to do.
-		switch (menu_choice) {
-		case 1:
-			clock_mode();
-			break;
-
-		case 2:
-			button_mode();
-			break;
-
-		default:
-			uart_print_bad_choice();
-			break;
-		}
-
+  while (1)
+  {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+
+      if (clock_ticks_pending > 0)
+      {
+          __disable_irq();
+          clock_ticks_pending--;
+          __enable_irq();
+
+          // Uppdatera klockan med en sekund
+          cd_tick(&my_clock);
+          // Visa tiden i UART
+          uart_print_cd(&huart2, &my_clock);
+          // Visa tiden på LCD:n
+          lcd_show_time();
+      }
+
+
+      /*
+      if (button_pressed)
+      {
+          button_pressed = 0;
+
+          if (c < 16)
+          {
+              TextLCD_Position(&hlcd, c, 0);
+              TextLCD_PutChar(&hlcd, c + ASCII_CAPITAL_OFFSET);
+          }
+          else if (c < LETTERS_TOTAL)
+          {
+              // Rad 2 har bara plats 0–7 för bokstäver
+              if (c < 24)
+              {
+                  TextLCD_Position(&hlcd, c - 16, 1);
+                  TextLCD_PutChar(&hlcd, c + ASCII_CAPITAL_OFFSET);
+              }
+          }
+
+          c = (c + 1) % LETTERS_TOTAL;
+      }
+      */
+
+
   /* USER CODE END 3 */
+  }
 }
 
 /**
@@ -235,6 +350,99 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x10D19CE4;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 79;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM6 Initialization Function
   * @param None
   * @retval None
@@ -252,9 +460,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 3999;
+  htim6.Init.Prescaler = 1999;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 9999;
+  htim6.Init.Period = 39999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -326,33 +534,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, SEG_DIO_Pin|SEG_CLK_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, SMPS_EN_Pin|SMPS_V1_Pin|SMPS_SW_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : B1_Pin MY_BTN_Pin */
-  GPIO_InitStruct.Pin = B1_Pin|MY_BTN_Pin;
+  /*Configure GPIO pin : B1_Pin */
+  GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : SEG_DIO_Pin */
-  GPIO_InitStruct.Pin = SEG_DIO_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SEG_DIO_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : SEG_CLK_Pin */
-  GPIO_InitStruct.Pin = SEG_CLK_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SEG_CLK_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SMPS_EN_Pin SMPS_V1_Pin SMPS_SW_Pin */
   GPIO_InitStruct.Pin = SMPS_EN_Pin|SMPS_V1_Pin|SMPS_SW_Pin;
@@ -375,8 +566,8 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(LD4_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -385,190 +576,24 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-// Send printf() text through UART2.
-int _write(int file, char *ptr, int len) {
-	HAL_UART_Transmit(&huart2, (uint8_t*) ptr, len,
-	HAL_MAX_DELAY);
-
-	return len;
-}
-
-// Runs when a GPIO interrupt happens.
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+/*
+ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    // Check that the interrupt came from our external button.
-    if (GPIO_Pin == MY_BTN_Pin)
+    if (GPIO_Pin == B1_Pin)
     {
-        // Count every interrupt, including contact bounce.
-        button_exti_count++;
-
-        // Save the time when the latest interrupt happened.
-        last_flank_causing_exti = HAL_GetTick();
+        button_pressed = 1;
     }
 }
-
-void uart_print_menu ()
-{
-	printf("\r\nMenu:\r\n");
-	printf("1. Clock mode\r\n");
-	printf("2. Button mode\r\n");
-	printf("Choose: \r\n");
-}
-
-int uart_get_menu_choice()
-{
-    char str[1] = { '\0' };
-    uint16_t str_len = 1;
-
-    HAL_UART_Receive(&huart2,
-                     (uint8_t *)str,
-                     str_len,
-                     HAL_MAX_DELAY);
-
-    int ret = -1;
-    sscanf(str, "%d", &ret);
-
-    return ret;
-}
-
-// Runs every time a timer interrupt happens.
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    // Check that the interrupt came from TIM6.
-    if (htim->Instance == TIM6)
-    {
-    	// Toggle colon every 0.5 seconds.
-    	clock_colon = !clock_colon;
-
-    	// Count half-second events.
-    	clock_half_second++;
-
-    	// Two half-second events make one second.
-    	if (clock_half_second >= 2)
-    	{
-    	    clock_half_second = 0;
-    	    clock_seconds++;
-
-    	    // 60 seconds make one minute.
-    	    if (clock_seconds >= 60)
-    	    {
-    	        clock_seconds = 0;
-    	        clock_minutes++;
-
-    	        // 60 minutes make one hour.
-    	        if (clock_minutes >= 60)
-    	        {
-    	            clock_minutes = 0;
-    	            clock_hours++;
-
-    	            // Start a new day after 24 hours.
-    	            if (clock_hours >= 24)
-    	            {
-    	                clock_hours = 0;
-    	            }
-    	        }
-    	    }
-    	}
-    }
-}
-
-void uart_print_bad_choice()
-{
-    // Tell the user that the menu choice was invalid.
-    printf("\r\nInvalid choice.\r\n");
-}
-
-void clock_mode()
-{
-	// Show that clock mode has started.
-	printf("\r\nClock mode started\r\n");
-
-/*	clock_hours = 23;
-	clock_minutes = 59;
-	clock_seconds = 45;
 */
 
-	// Start TIM6 with interrupt.
-	HAL_TIM_Base_Start_IT(&htim6);
-
-    while (1)
-    {
-
-    	int b1_pressed = GPIO_PIN_SET
-    	        == HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
-
-    	if (b1_pressed)
-    	{
-    	    // Show HH:MM when B1 is pressed.
-    	    qs_put_digits(
-    	        clock_hours / 10,
-    	        clock_hours % 10,
-    	        clock_minutes / 10,
-    	        clock_minutes % 10,
-    	        clock_colon
-    	    );
-    	}
-    	else
-    	{
-    		// Show MM:SS on the display.
-    		qs_put_digits(
-    			clock_minutes / 10,
-				clock_minutes % 10,
-				clock_seconds / 10,
-				clock_seconds % 10,
-				clock_colon
-    		);
-    	}
-    }
-}
-
-void button_mode()
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    // Store current time.
-    uint32_t now;
-
-    // Show that button mode has started.
-    printf("\r\nButton mode started\r\n");
-
-    while (1)
+    if (htim->Instance == TIM6)
     {
-        // Read current system time in milliseconds.
-        now = HAL_GetTick();
-
-        // Store if the blue B1 button is pressed.
-        int b1_pressed;
-
-        // Check if a new interrupt has happened.
-        if (last_flank_causing_exti != last_managed_exti)
-        {
-            // Check if enough time has passed since the latest flank.
-            if ((now - last_flank_causing_exti) >= BOUNCE_DELAY_MS)
-            {
-                // Mark this interrupt as handled.
-                last_managed_exti = last_flank_causing_exti;
-
-				// Check if the button is still pressed.
-				if (HAL_GPIO_ReadPin(MY_BTN_GPIO_Port, MY_BTN_Pin)
-						== GPIO_PIN_RESET) {
-					// Count one valid button press.
-					button_debounced_count++;
-
-				}
-			}
-        }
-
-		// Check the blue B1 button on the NUCLEO board.
-		b1_pressed = GPIO_PIN_RESET
-				== HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
-
-		// Show raw interrupts when B1 is held.
-		// Otherwise show debounced button presses.
-		qs_put_big_num(
-				b1_pressed ?
-						button_exti_count : button_debounced_count);
+        HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+        clock_ticks_pending++;
     }
 }
-
 /* USER CODE END 4 */
 
 /**
